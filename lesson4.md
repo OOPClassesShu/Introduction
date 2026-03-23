@@ -94,7 +94,8 @@ Buffer(Buffer&& other) noexcept
     other.data = nullptr;
     other.size = 0;
 }
-``` 
+```
+## [Только как пример, не более ](only_for_test.cpp)
 
 ### Оператор присваивания перемещением
 
