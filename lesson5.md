@@ -94,3 +94,143 @@ operator тип() (например, operator double() const)
 
 ## Особенности перегрузки конкретных операторов
 
+### Унарные операторы
+
+**Префиксный инкремент/декремент** – не принимают аргументов, возвращают ссылку на изменённый объект.
+
+```
+class Counter {
+    int value;
+public:
+    Counter& operator++() {   // ++obj
+        ++value;
+        return *this;
+    }
+};
+```
+**Постфиксный инкремент/декремент** – принимают фиктивный параметр int, возвращают старое значение (по значению).
+
+```
+Counter operator++(int) {   // obj++
+    Counter old = *this;
+    ++(*this);
+    return old;
+}
+```
+
+### Бинарные операторы
+
+**Арифметические** часто реализуются через соответствующие составные операторы, чтобы избежать дублирования кода.
+
+```
+Complex& operator+=(const Complex& other) {
+    re += other.re;
+    im += other.im;
+    return *this;
+}
+
+// Затем operator+ через operator+=
+Complex operator+(const Complex& a, const Complex& b) {
+    Complex res = a;
+    res += b;
+    return res;
+}
+```
+**Операторы сравнения** – логично возвращать bool. Для класса можно определить только == и <, а остальные выразить через них.
+
+### Оператор индексации []
+Обычно возвращает ссылку на элемент, чтобы можно было изменять его. \
+Часто делают две версии: константную и неконстантную.
+```
+class Array {
+    int* data;
+    size_t size;
+public:
+    int& operator[](size_t index) {
+        return data[index];
+    }
+    const int& operator[](size_t index) const {
+        return data[index];
+    }
+};
+```
+
+ ### Оператор ()
+
+ Позволяет объекту вести себя как функция (функтор). Может иметь любое количество параметров.
+
+```
+struct Multiplier {
+    int factor;
+    int operator()(int x) const { return x * factor; }
+};
+Multiplier times2{2};
+int res = times2(5);  // 10
+```
+### Оператор ->
+
+Перегружается для классов, которые ведут себя как умные указатели. Должен возвращать указатель или объект, для которого тоже перегружен ->. \
+Обычно возвращает сырой указатель на управляемый объект.
+
+```
+template<typename T>
+class SmartPtr {
+    T* ptr;
+public:
+    SmartPtr(T* p) : ptr(p) {}
+    T* operator->() { return ptr; }
+    const T* operator->() const { return ptr; }
+};
+```
+
+### Операторы << и >> для ввода/вывода
+
+Всегда реализуются как свободные функции, так как левый операнд – поток (std::ostream&), а не ваш класс.
+
+```
+class Point {
+    int x, y;
+public:
+    friend std::ostream& operator<<(std::ostream& os, const Point& p);
+    friend std::istream& operator>>(std::istream& is, Point& p);
+};
+
+std::ostream& operator<<(std::ostream& os, const Point& p) {
+    os << '(' << p.x << ", " << p.y << ')';
+    return os;
+}
+
+std::istream& operator>>(std::istream& is, Point& p) {
+    is >> p.x >> p.y;
+    return is;
+}
+```
+### Операторы преобразования типа
+
+Позволяют неявно или явно преобразовывать объект к другому типу.
+
+```
+class Rational {
+    int num, den;
+public:
+    operator double() const { return static_cast<double>(num) / den; }
+};
+
+Rational r(1, 2);
+double d = r;   // неявное преобразование
+// Чтобы запретить неявное, добавить explicit: explicit operator double() const
+```
+
+## Какие операторы нельзя перегрузить
+
+:: – разрешение области видимости
+
+.* – доступ к члену по указателю (но ->* перегружать можно)
+
+. – прямой доступ к члену
+
+?: – тернарный условный оператор
+
+sizeof – оператор определения размера
+
+typeid – оператор информации о типе (RTTI)
