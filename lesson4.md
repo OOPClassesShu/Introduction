@@ -95,7 +95,7 @@ Buffer(Buffer&& other) noexcept
     other.size = 0;
 }
 ```
-## [Только как пример, не более ](only_for_test.cpp)
+[Только как пример, не более ](only_for_test.cpp)
 
 ### Оператор присваивания перемещением
 
