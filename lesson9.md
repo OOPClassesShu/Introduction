@@ -186,6 +186,38 @@ int main() {
 ```
 Пример (только для меня )
 ```
+class MyException : std::exception {
+    int index;
+public:
+    MyException(int ind) :std::exception() {
+        index = ind;
+    }
+    int getIndex() const { return index; }
+
+};
+
+class MyMass {
+    static const int size = 10;
+    int mass[10];
+public:
+    int& operator[] (int i) {
+        if (i<0 || i >size)
+            throw MyException(i);
+        return mass[i];
+    }
+};
+
+void foo(int value) {
+    if (value < 0) {
+        //throw value;
+        //throw "Отрицательное значение";
+        //throw std::exception("Erorr");
+        //throw 123.56;
+    }
+    std::cout << "Value is " << std::endl;
+}
+
+
 int main8(int argc, char* argv[]) {
     setlocale(LC_ALL, "Russian");
     /*try {
@@ -233,6 +265,46 @@ int main8(int argc, char* argv[]) {
         std::cout << "wrong index " << ex.getIndex() << std::endl;
     }
 
+
+    return 0;
+}
+
+namespace fs = std::filesystem;
+int main7(int argc, char* argv[]) {
+    setlocale(LC_ALL, "Russian");
+
+    auto Path = fs::current_path();
+    std::cout << "cur path:" << Path << std::endl;
+    if (!fs::exists("new_folder")) {
+        if (fs::create_directory("new_folder")) {
+            std::cout << "create directory\n";
+        }
+        else {
+            std::cout << "error create directory\n";
+        }
+    }
+
+    //return 0;
+
+
+    fs::current_path("new_folder");//перееходим в папку new_folder
+    std::ofstream file("1.txt");
+    file << "this file in new folder\n";
+    file.close();
+
+    if (fs::exists("1.txt"))
+        std::cout << "file is create\n";
+
+    fs::current_path("..");
+    fs::copy("new_folder", "create");
+    //fs::rename("new_folder", "C:/tmp/old_folder");
+    //std::cout << "directory rename & copy\n";
+    //fs::remove_all("create");//удаляет папку со всем его сождержимым
+    //fs::remove();//удаляет файл или пустую папку
+    //fs::remove_all("C:/tmp/old_folder");
+    //if (fs::exists("../../Debug")) {
+    //        std::cout << "have Debug\n";
+    //}
 
     return 0;
 }
