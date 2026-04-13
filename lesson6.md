@@ -253,7 +253,7 @@ int main() {
 
 ```
 #include <iostream>
-#include <typeinfo>  // для typeid(T).name() — просто чтобы показать типы
+#include <typeinfo>
 
 template <typename T>
 class Box {
@@ -309,7 +309,6 @@ public:
         std::cout << "Device<T>::shutdown (T=" << typeid(T).name() << ")" << std::endl;
     }
 
-
     virtual void send(const T& msg) const {
         std::cout << "Device<T>::send (T=" << typeid(T).name() << ")" << std::endl;
     }
@@ -317,7 +316,6 @@ public:
     virtual void configure() const {
         std::cout << "Device<T>::configure (T=" << typeid(T).name() << ")" << std::endl;
     }
-
 
     virtual ~Device<T>() {}
 };
@@ -397,11 +395,13 @@ public:
         // вызываем Router<T,U>::start() — это базовая логика маршрутизации/сети
         Router<T, U>::start();
     }
+
     void send(const T& msg) const override {
         std::cout << "SecureRouter<T,U,V>::send — encrypting message with key " << key << std::endl;
         // после шифрования вызываем базовую отправку (маршрутизацию)
         Router<T, U>::send(msg);
     }
+
     void configure() const override {
         std::cout << "SecureRouter<T,U,V>::configure — secure config, key=" << key << std::endl;
         // можно дополнить базовую конфигурацию
