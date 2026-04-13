@@ -248,3 +248,198 @@ int main() {
     return 0;
 }
 ```
+
+# Наследование 
+
+```
+#include <iostream>
+#include <typeinfo>  // для typeid(T).name() — просто чтобы показать типы
+
+template <typename T>
+class Box {
+public:
+    void set(T v) {
+        value = v;
+    }
+
+    T get() {
+        return value;
+    }
+
+private:
+    T value;
+};
+
+template <typename T>
+class Base {
+public:
+    T get() { return value; }
+protected:
+    T value;
+};
+
+template <typename T, typename U>
+class Derived : public Base<T> {
+    U  v1;
+
+
+public:
+    void print() {
+        //T x = get(); // error
+        T x = this->get();
+        T x1 = Base<T>::get();
+    }
+
+};
+
+template <typename T>
+class Device {
+protected:
+    T data;  // данные, с которыми работает устройство
+public:
+    explicit Device(T d) : data {d} {
+        std::cout << "Device<T>::configure (T= " << typeid(T).name() << ")" << std::endl;
+    }
+
+    virtual void start() const {
+        std::cout << "Device<T>::start (T=" << typeid(T).name() << ")" << std::endl;
+    }
+
+    virtual void shutdown() const {
+        std::cout << "Device<T>::shutdown (T=" << typeid(T).name() << ")" << std::endl;
+    }
+
+
+    virtual void send(const T& msg) const {
+        std::cout << "Device<T>::send (T=" << typeid(T).name() << ")" << std::endl;
+    }
+
+    virtual void configure() const {
+        std::cout << "Device<T>::configure (T=" << typeid(T).name() << ")" << std::endl;
+    }
+
+
+    virtual ~Device<T>() {}
+};
+
+
+template <typename T>
+class NetworkDevice : public Device<T> {
+protected:
+    bool isConnected;  // состояние сети
+public:
+
+    explicit NetworkDevice(T d, bool connected = false) : Device<T>(d), isConnected(connected) {
+        std::cout << "NetworkDevice<T> ctor (T=" << typeid(T).name() << ")" << std::endl;
+    }
+
+    // переопределяем некоторые виртуальные методы
+    void start() const override {
+        std::cout << "NetworkDevice<T>::start (T=" << typeid(T).name() << ") — checking network..." << std::endl;
+        if (isConnected) {
+            std::cout << "  network OK" << std::endl;
+        } else {
+            std::cout << "  network not connected" << std::endl;
+        }
+    }
+    void send(const T& msg) const override {
+        std::cout << "NetworkDevice<T>::send (T=" << typeid(T).name() << ") — sending over network: " << msg << std::endl;
+    }
+    void configure() const override {
+        std::cout << "NetworkDevice<T>::configure (T=" << typeid(T).name() << ") — network settings" << std::endl;
+    }
+
+    virtual ~NetworkDevice() {
+        std::cout << "NetworkDevice<T> dtor (T=" << typeid(T).name() << ")" << std::endl;
+    }
+};
+
+
+template <typename T, typename U>
+class Router : public NetworkDevice<T> {
+protected:
+    U address;  // адрес маршрутизатора (например, IP-адрес, строка, число и т.д.)
+public:
+    Router(T d, U addr, bool connected = true) : NetworkDevice<T>(d, connected), address(addr) {
+        std::cout << "Router<T,U> ctor (T=" << typeid(T).name() << ", U=" << typeid(U).name() << ")" << std::endl;
+    }
+
+    // переопределяем виртуальные методы
+    void start() const override {
+        std::cout << "Router<T,U>::start (T=" << typeid(T).name() << ", U=" << typeid(U).name() << ") — starting routing engine..." << std::endl;
+        // можем вызвать версию из NetworkDevice<T> (через this-> или NetworkDevice<T>::)
+        NetworkDevice<T>::start();  // базовая проверка сети
+    }
+    void send(const T& msg) const override {
+        std::cout << "Router<T,U>::send (T=" << typeid(T).name() << ", U=" << typeid(U).name() << ") — routing message: " << msg << " to address " << address << std::endl;
+    }
+    void configure() const override {
+        std::cout << "Router<T,U>::configure (T=" << typeid(T).name() << ", U=" << typeid(U).name() << ") — router config, address=" << address << std::endl;
+    }
+
+    virtual ~Router() {
+        std::cout << "Router<T,U> dtor (T=" << typeid(T).name() << ", U=" << typeid(U).name() << ")" << std::endl;
+    }
+};
+
+template <typename T, typename U, typename V>
+class SecureRouter : public Router<T, U> {
+protected:
+    V key;  // ключ шифрования
+public:
+    SecureRouter(T d, U addr, V k, bool connected = true) : Router<T, U>(d, addr, connected), key(k) {
+        std::cout << "SecureRouter<T,U,V> ctor (T=" << typeid(T).name() << ", U=" << typeid(U).name() << ", V=" << typeid(V).name() << ")" << std::endl;
+    }
+
+    // переопределяем виртуальные методы
+    void start() const override {
+        std::cout << "SecureRouter<T,U,V>::start — initializing security layer..." << std::endl;
+        // вызываем Router<T,U>::start() — это базовая логика маршрутизации/сети
+        Router<T, U>::start();
+    }
+    void send(const T& msg) const override {
+        std::cout << "SecureRouter<T,U,V>::send — encrypting message with key " << key << std::endl;
+        // после шифрования вызываем базовую отправку (маршрутизацию)
+        Router<T, U>::send(msg);
+    }
+    void configure() const override {
+        std::cout << "SecureRouter<T,U,V>::configure — secure config, key=" << key << std::endl;
+        // можно дополнить базовую конфигурацию
+        Router<T, U>::configure();
+    }
+
+    virtual ~SecureRouter() {
+        std::cout << "SecureRouter<T,U,V> dtor (T=" << typeid(T).name() << ", U=" << typeid(U).name() << ", V=" << typeid(V).name() << ")" << std::endl;
+    }
+};
+
+
+int main() {
+    std::cout << "\n=== Создаем SecureRouter<int, const char*, int> ===\n";
+
+    // T = int, U = const char* (адрес), V = int (ключ)
+    Device<int>* dev = new SecureRouter<int, const char*, int>(42, "192.168.1.1", 1234, true);
+
+    std::cout << "\n--- dev->start() ---\n";
+    dev->start();  // виртуальный вызов: SecureRouter -> Router -> NetworkDevice -> Device (цепочка)
+
+    std::cout << "\n--- dev->configure() ---\n";
+
+    dev->configure();  // цепочка переопn--- dev->send(100";
+    dev->send(100);  // цепочка: шифрование ->shutdown() ---\n";
+    dev->shutdown();  // вызовется Device<int>::shutdown (если "\n--- удаление через базовый указатель ---\n";
+    delete dev;  // вызов цепдаем Router<double, int> (через указатель на NetworkDevice) ===\n";
+
+    return 0;
+}
+
+
+
+int main_11 () {
+
+    Box<int> b;
+    Derived<int,double> f;
+    return 0;
+
+}
+```
