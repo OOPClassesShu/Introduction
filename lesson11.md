@@ -143,6 +143,47 @@ const_cast<MyClass&>(obj).set(5);  // снимаем const — UB, если obj 
 Используется для адаптация старых C-функций, которые не принимают const, но не изменяют данные \
 или внутри константного метода, когда нужно изменить mutable поле.
 
-### reinterpret_cast
+#### reinterpret_cast
 
+```
+int i = 0x12345678;
+char* p = reinterpret_cast<char*>(&i);  // чтение побайтно (зависит от endianness)
+
+// Преобразование указателя в целое (и обратно)
+uintptr_t addr = reinterpret_cast<uintptr_t>(p);
+int* p2 = reinterpret_cast<int*>(addr);
+
+// Опасный пример: преобразование между несвязанными типами
+class A {};
+class B {};
+
+A* a = new A;
+B* b = reinterpret_cast<B*>(a);  // UB при разыменовании
+```
+**Задача**
+
+static_cast для downcast без проверки
+
+```
+struct Animal { virtual ~Animal() {} };
+struct Dog : Animal { void bark() const { std::cout << "Woof!\n"; } };
+struct Cat : Animal { void meow() const { std::cout << "Meow!\n"; } };
+```
+Напишите функцию, которая принимает Animal* и вызывает bark(), если это собака, и meow(), если это кошка. \
+Запрещено использовать dynamic_cast и RTTI. Используйте только static_cast. \
+Подумайте как доработать \
+
+**Задача**
+
+dynamic_cast при множественном наследовании
+Дана иерархия:
+```
+struct A { virtual ~A() {} };
+struct B { virtual ~B() {} };
+struct C : A, B { void f() {} };
+```
+Напишите код, который создаёт объект C. \
+Приводит указатель на C к B*. \
+Затем с помощью dynamic_cast восстанавливает указатель на C из B*. \
+Проверяет, что восстановленный указатель совпадает с исходным. \
 
