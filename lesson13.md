@@ -1074,7 +1074,98 @@ value_compare value_comp() const;
 ```
 Дан map<string, int> с оценками студентов. Удалите всех студентов с оценкой ниже 60. Выведите оставшихся.
 ```
+
 Задача 6. 
 ```
 С помощью multiset найдите медиану потока чисел (поступающих одно за другим) за O(log n) на добавление.
 ```
+
+
+### Служебное, только для меня )))
+
+
+```
+// array - массив обертка для статического массива
+// 
+void printAr(const array<int,30> li) {
+    for (auto l : li)
+        cout << l << " ";
+    cout << endl;
+}
+
+int main8() {
+    setlocale(LC_ALL, "rus");
+    const int size = 30;
+    array<int, size> arr = {1,2,3,4,5,6,7,8,9};   
+    printAr(arr);
+
+    arr.front();
+    arr.back();
+
+    arr.fill(77);
+    printAr(arr);
+    return 0;
+}
+
+int main() {
+    setlocale(LC_ALL, "rus");
+
+    map<string, int>mp = {{"str1",12},{"str2",33}};
+
+    map<string, int>::iterator it  = mp.begin();
+    
+    cout << (*it).first << " "<< (*it).second << endl;
+
+    printMp(mp);
+    mp.insert({ "str3", 99 });
+    mp.insert(pair<string,int>("str4", 199));
+    mp.insert(make_pair("str5", 700));
+    mp.emplace("str6", 1000);
+
+    printMp(mp);
+
+    mp.insert_or_assign("str3", 100);
+
+    printMp(mp);
+
+    it = mp.find("str4");
+    if (it != mp.end())
+        cout << (*it).first << " " << (*it).second << endl;
+
+
+    cout << mp["str4"] << endl;
+    cout << mp["str777"] << endl;
+
+
+    mp["str4"] = 98766;
+    cout << mp["str4"] << endl;
+
+    mp["str777"] = 99999999;
+    cout << mp["str777"] << endl;
+
+
+    // at - проговорить
+
+    return 0;
+}
+
+
+111111
+int main() {
+    std::vector<int> arr = {5, 2, 8, 2, 5, 1, 9, 3};
+    
+    // Помещаем все элементы в set (уникальные и отсортированные)
+    std::set<int> unique_elements(arr.begin(), arr.end());
+    
+    // Выводим уникальные элементы в порядке возрастания
+    for (int x : unique_elements) {
+        std::cout << x << " ";
+    }
+    std::cout << std::endl;
+    
+    // Выводим их количество
+    std::cout << "Количество уникальных элементов: " << unique_elements.size() << std::endl;
+    
+    return 0;
+}
+
