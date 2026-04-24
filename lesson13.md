@@ -1169,3 +1169,151 @@ int main() {
     return 0;
 }
 
+2222222
+#include <iostream>
+#include <set>
+#include <algorithm>
+#include <iterator>
+
+// Объединение: A ∪ B
+std::set<int> set_union(const std::set<int>& a, const std::set<int>& b) {
+    std::set<int> result;
+    std::set_union(a.begin(), a.end(),
+                   b.begin(), b.end(),
+                   std::inserter(result, result.begin()));
+    return result;
+}
+
+// Пересечение: A ∩ B
+std::set<int> set_intersection(const std::set<int>& a, const std::set<int>& b) {
+    std::set<int> result;
+    std::set_intersection(a.begin(), a.end(),
+                          b.begin(), b.end(),
+                          std::inserter(result, result.begin()));
+    return result;
+}
+
+// Разность: A \ B (элементы, которые есть в A, но нет в B)
+std::set<int> set_difference(const std::set<int>& a, const std::set<int>& b) {
+    std::set<int> result;
+    std::set_difference(a.begin(), a.end(),
+                        b.begin(), b.end(),
+                        std::inserter(result, result.begin()));
+    return result;
+}
+
+// Пример использования
+int main() {
+    std::set<int> A = {1, 2, 3, 4, 5};
+    std::set<int> B = {3, 4, 5, 6, 7};
+
+    auto u = set_union(A, B);          // {1,2,3,4,5,6,7}
+    auto i = set_intersection(A, B);   // {3,4,5}
+    auto d = set_difference(A, B);     // {1,2}
+
+    std::cout << "Union: ";
+    for (int x : u) std::cout << x << " ";
+    std::cout << "\nIntersection: ";
+    for (int x : i) std::cout << x << " ";
+    std::cout << "\nDifference (A\\B): ";
+    for (int x : d) std::cout << x << " ";
+}
+```
+
+```
+Подсчёт гласных букв в строке
+Условие:
+Дана строка из латинских букв (строчные). Посчитайте, сколько раз встречается каждая гласная буква (a, e, i, o, u).
+Выведите только те гласные, которые встречались, в алфавитном порядке, и их количество.
+
+Пример:
+"hello world" →
+e : 1
+o : 2
+#include <iostream>
+#include <map>
+#include <string>
+
+int main() {
+    std::string text = "hello world";
+    std::map<char, int> vowel_count;
+    
+    // Множество гласных для быстрой проверки
+    std::set<char> vowels = {'a', 'e', 'i', 'o', 'u'};
+    
+    for (char ch : text) {
+        if (vowels.count(ch)) {
+            vowel_count[ch]++;
+        }
+    }
+    
+    for (const auto& [vowel, cnt] : vowel_count) {
+        std::cout << vowel << " : " << cnt << std::endl;
+    }
+}
+```
+
+```
+Частота символов в строке
+Условие:
+Дана строка. Подсчитайте частоту каждого символа (включая пробелы? пусть только буквы и цифры). Выведите символы в порядке возрастания (по коду ASCII) и их частоту.
+
+Пример:
+"abracadabra" →
+a : 5
+b : 2
+c : 1
+d : 1
+r : 2
+
+
+#include <iostream>
+#include <map>
+#include <string>
+
+int main() {
+    std::string text = "abracadabra";
+    std::map<char, int> freq;
+    
+    for (char ch : text) {
+        freq[ch]++;
+    }
+    
+    for (const auto& [ch, count] : freq) {
+        std::cout << ch << " : " << count << std::endl;
+    }
+}
+
+```
+
+```
+Проверка изограммы
+Условие:
+Слово называется изограммой, если в нём нет повторяющихся букв (регистр не учитываем). Напишите программу, которая определяет, является ли введённое слово изограммой. Используйте set.
+
+Пример:
+"python" → "Да"
+"hello" → "Нет" (буква 'l' повторяется)
+
+#include <iostream>
+#include <set>
+#include <string>
+#include <cctype> // for tolower
+
+int main() {
+    std::string word = "hello";
+    std::set<char> letters;
+    bool is_isogram = true;
+    
+    for (char ch : word) {
+        char lower = std::tolower(ch);
+        if (letters.count(lower)) {
+            is_isogram = false;
+            break;
+        }
+        letters.insert(lower);
+    }
+    
+    std::cout << (is_isogram ? "Да" : "Нет") << std::endl;
+}
+```
