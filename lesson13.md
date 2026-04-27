@@ -1081,7 +1081,269 @@ value_compare value_comp() const;
 ```
 
 
-### Служебное, только для меня )))
+## std::multiset множество с дубликатами
+
+Отличия от std::set
+
+
+|Характеристика	|std::set<T>|	std::multiset<T>|
+|--------------|------------|-------------------|
+|Уникальность элементов|	Да (каждый элемент уникален)|	Нет (допускаются дубликаты)|
+|Вставка элемента|	insert возвращает pair<iterator,bool>|	insert возвращает iterator (всегда успешна)|
+|Удаление по ключу (erase(key))|	Удаляет 0 или 1 элемент|	Удаляет все элементы с данным ключом|
+|count(key)|	Возвращает 0 или 1|	Возвращает количество дубликатов|
+|find(key)|	Возвращает итератор на элемент|	Возвращает итератор на первый из дубликатов (произвольный)|
+|lower_bound/upper_bound|	Работают как обычно, диапазон из 0–1 элемента|	Диапазон может содержать много элементов|
+
+
+### Основные методы и примеры
+```
+#include <set>
+#include <iostream>
+
+int main() {
+    std::multiset<int> ms = {1, 2, 2, 3, 3, 3};
+
+    // Вставка
+    ms.insert(2);      // теперь {1,2,2,2,3,3,3}
+    auto it = ms.insert(4);  // it указывает на 4
+
+    // Подсчёт дубликатов
+    std::cout << "count of 2: " << ms.count(2) << std::endl; // 3
+
+    // Поиск первого из дубликатов
+    auto found = ms.find(3);
+    std::cout << "first 3: " << *found << std::endl;
+
+    // Диапазон всех 3
+    auto range = ms.equal_range(3); // pair(нижняя_граница, верхняя_граница)
+    for (auto it = range.first; it != range.second; ++it) {
+        std::cout << *it << " ";    // 3 3 3
+    }
+    std::cout << std::endl;
+
+    // Удаление одного элемента (по итератору)
+    auto to_delete = ms.find(2);
+    ms.erase(to_delete); // удаляет только один элемент 2
+
+    // Удаление всех 2
+    ms.erase(2);         // удаляет все оставшиеся двойки
+
+    // Вывод всех элементов
+    for (int x : ms) std::cout << x << " "; // 1 3 3 3 4
+}
+```
+
+### Специфические методы (как у set)
+
+- lower_bound(key) — итератор на первый элемент не меньше key.
+- upper_bound(key) — итератор на первый элемент больше key.
+- equal_range(key) — возвращает пару (lower_bound, upper_bound).
+
+## std::multimap — словарь с дубликатами ключей
+
+Отличия от std::map
+
+|Характеристика|	std::map<Key, T>|	std::multimap<Key, T>|
+|-|-|-|
+|Уникальность ключей|	Да|	Нет (допускаются дубликаты)|
+|Оператор []|	Есть (создаёт элемент, если нет)|	Нет (неоднозначность)|
+|insert возвращает|	pair<iterator, bool>|	iterator (всегда успешен)|
+|erase(key)|	Удаляет 0 или 1 элемент|	Удаляет все элементы с данным ключом|
+|count(key)|	0 или 1|	Количество пар с таким ключом|
+|find(key)|	Итератор на единственную пару|	Итератор на первую из дубликатов |
+
+
+### Основные методы и примеры
+```
+#include <map>
+#include <string>
+#include <iostream>
+
+int main() {
+    std::multimap<std::string, int> mm;
+    
+    // Вставка
+    mm.insert({"Alice", 90});
+    mm.insert({"Alice", 95});
+    mm.insert({"Bob", 85});
+    mm.insert({"Alice", 88});
+
+    // Вывод всех пар
+    for (const auto& [name, score] : mm) {
+        std::cout << name << " -> " << score << std::endl;
+    }
+    // Порядок: Alice 90, Alice 95, Alice 88, Bob 85
+    // (дубликаты ключей идут подряд, но порядок вставки среди дубликатов не гарантирован)
+
+    // Подсчёт
+    std::cout << "Alice's scores: " << mm.count("Alice") << std::endl; // 3
+
+    // Поиск первого вхождения
+    auto it = mm.find("Alice");
+    if (it != mm.end()) {
+        std::cout << "First Alice: " << it->second << std::endl; // может быть 90, 95 или 88
+    }
+
+    // Диапазон всех Alice
+    auto range = mm.equal_range("Alice");
+    for (auto it = range.first; it != range.second; ++it) {
+        std::cout << it->second << " "; // выведет все оценки Alice
+    }
+    std::cout << std::endl;
+
+    // Удаление одного элемента (по итератору)
+    auto to_erase = mm.find("Bob");
+    if (to_erase != mm.end()) mm.erase(to_erase);
+
+    // Удаление всех Alice
+    mm.erase("Alice"); // удаляет все три пары
+
+    // После удаления остаётся пустой multimap
+}
+```
+
+### Дополнительно 
+
+```
+iterator begin();
+const_iterator begin() const;
+Возвращает итератор для первого элемента в мультиотображении.
+```
+```
+void clear();
+Удаляет все элементы из мультиотображения.
+```
+````
+size_type count(const key_type &k) const;
+Возвращает число вхождений ключа k в мультиотображении (1 или 0).
+```
+```
+bool empty() const;
+Возвращает значение true, если данное мультиотображение пустое, и false в противном случае.
+```
+```
+const_iterator end() const;
+iterator end();
+Возвращает итератор, указывающий на конец мультиотображения.
+```
+```
+pair<iterator, iterator> equal_range(const key_type &k);
+pair<const_iterator, const_iterator> equal_range(const key_type &k) const;
+Возвращает пару итераторов, которые указывают на первый и последний элементы в мультиотображении,
+содержащие заданный ключ.
+```
+```
+void erase(iterator i);
+Удаляет элемент, адресуемый итератором i.
+```
+```
+void erase(iterator start, iterator end);
+Удаляет элементы в диапазоне, задаваемом параметрами start и end.
+```
+```
+size_type erase(const key_type &k);
+Удаляет из мультиотображения элементы, ключи которых имеют значение k.
+```
+```
+iterator find(const key_type &k);
+const_iterator find(const key_type &k) const;
+Возвращает итератор для заданного ключа. Если ключ не обнаружен, возвращает итератор до конца мультиотображения.
+```
+```
+allocator_type get_allocator() const;
+Возвращает распределитель мультиотображения.
+```
+```
+iterator insert(iterator i, const value_type &val);
+Вставляет значение val после элемента, заданным итератором i, возвращает итератор для этого элемента.
+```
+```
+template <class InIter> void insert(InIter start,  InIter end);
+Вставляет элементы заданного диапазона.
+```
+```
+pair<iterator, bool> insert(const value_type &val);
+Вставляет значение val в используемое мультиотображение.
+Возвращает итератор для данного мультиотображения.
+Элемент вставляет только в том случае, если его еще нет в мультиотображении. Если элемент был вставлен
+возвращает пару pair<iterator, true>, в противном случае
+```
+```
+pair<iterator, false>
+key_compare key_comp() const;
+Возвращает объект-функцию, которая сравнивает ключи.
+```
+```
+iterator lower_bound(const key_type &k);
+const_iterator lower_bound(const key_type &k) const;
+Возвращает итератор для первого элемента в мультиотображении, ключ которого равен значению k или больше
+этого значения.
+```
+```
+size_type max_size() const;
+Возвращает максимальное число элементов, которое может содержать мультиотображение.
+```
+```
+reverse_iterator rbegin();
+const_reverse_iterator rbegin() const;
+Возвращает реверсивный итератор для конца мультиотображения.
+```
+```
+reverse_iterator rbegin();
+const_reverse_iterator rbegin() const;
+Возвращает реверсивный итератор для начала мультиотображения.
+```
+```
+size_type size() const;
+Возвращает текущее количество элементов в мультиотображении.
+```
+```
+void swap(multimap<Key, T, Comp, Allocator> &ob);
+Выполняет обмен элементами данного мультиотображения и мультиотображения ob.
+```
+```
+iterator upper_bound(const key_type &k);
+const_iterator upper_bound(const key_type &k) const;
+Возвращает итератор для первого элемента в мультиотображении, ключ которого больше заданного значения k.
+```
+```
+value_compare value_comp() const;
+Возвращает объект-функцию, которая сравнивает значения.
+```
+
+## Сложность операций (общая для multiset и multimap)
+
+|Операция|	Сложность
+|Поиск (find)|	O(log n)|
+|Вставка|	O(log n)|
+|Удаление по итератору|	 O(1)|
+|Удаление по ключу (erase(key))	|O(log n + count)|
+|count(key)	|O(log n)|
+|lower_bound/upper_bound	|O(log n)|
+|equal_range	|O(log n)|
+
+## Контейнеры-адаптеры
+
+- std::stack — реализует структуру данных стек (LIFO — Last In, First Out).
+- std::queue — реализует структуру данных очередь (FIFO — First In, First Out).
+- std::priority_queue — реализует очередь с приоритетом, где элемент с наивысшим приоритетом всегда находится в начале.
+
+### std::stack — Классический стек
+
+Стек — это структура данных, работающая по принципу «последним пришёл — первым вышел» (LIFO). \
+Представьте себе стопку тарелок: вы всегда берёте верхнюю, и новую кладёте тоже наверх.
+
+#### Интерфейс и методы
+
+- push(const T& value) / emplace(Args&&... args): Добавляет элемент на вершину стека.
+- pop(): Удаляет элемент с вершины стека. Ничего не возвращает.
+- top(): Возвращает ссылку на элемент на вершине стека, не удаляя его.
+- empty(): Проверяет, пуст ли
+- стек.size(): Возвращает количество элементов в стеке.
+
+
+## Служебное, только для меня )))
 
 
 ```
