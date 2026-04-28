@@ -96,4 +96,93 @@ std::function (#include <functional>) — это обёртка, которая 
 
 Синтаксис и базовое использование
 ```
+#include <functional>
+#include <iostream>
+
+int add(int a, int b) { return a + b; }
+
+int main() {
+    // std::function<возвращаемый_тип(аргументы)>
+    std::function<int(int, int)> func;
+    
+    func = add;          // можно присвоить указатель на функцию
+    std::cout << func(5, 3) << std::endl; // 8
+    
+    func = [](int a, int b) { return a * b; }; // лямбда
+    std::cout << func(5, 3) << std::endl; // 15
+}
+```
+Функторы (классы с operator())
+
+```
+struct Square {
+    int operator()(int x) const { return x * x; }
+};
+
+std::function<int(int)> f = Square();
+std::cout << f(4); // 16
+```
+Указатели на методы класса
+```
+class Greeter {
+public:
+    void say(const std::string& name) const {
+        std::cout << "Hello, " << name << std::endl;
+    }
+};
+
+int main() {
+    Greeter g;
+    // std::function может обернуть метод, но нужно передавать объект
+    std::function<void(const Greeter&, const std::string&)> method = &Greeter::say;
+    method(g, "Alice");
+}
+```
+
+Преимущества std::function
+
+- Единый тип для всех вызываемых объектов с одинаковой сигнатурой.
+- Можно хранить в контейнерах (std::vector<std::function<void(int)>>).
+- Поддерживает лямбды с захватом.
+- Удобен для обратных вызовов (callbacks), стратегий, событий.
+
+
+```
+void doWork(vector<int>& vc, function<void(int)> fun) {
+
+    for (auto v : vc) {
+        fun(v);
+    }
+}
+
+void doWork(vector<int>& vc, vector <function<void(int)>> funcs) {
+
+    for (auto v : vc) {
+        for (auto fun : funcs)
+            fun(v);
+    }
+}
+
+int main() {
+    setlocale(LC_ALL, "rus");
+
+    vector<int> vc = { 1,2,3,45,67,33,221,88,99,22 };
+
+    doWork(vc);
+    doWork(vc, fun);
+    vector<function<void(int)>> funcs = { fun,fun2 };
+    doWork(vc, funcs);
+
+    return 0;
+}
+```
+
+## Лямбда-выражения
+
+Лямбда — это анонимная функция, которую можно определить прямо в месте использования. \
+Она может захватывать переменные из окружающей области видимости.
+
+Синтаксис лямбды
+
+```
 ```
