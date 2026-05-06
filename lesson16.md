@@ -197,3 +197,84 @@ std::cout << std::ctime(&t);  // "Tue May  6 12:34:56 2025\n"
 ```
 
 
+|Часы|	Характеристика|
+|-|-|
+|system_clock|	соответствует системному времени (стенные часы). Может прыгать (пользователь изменил время, NTP). Полезна для вывода дат/времени.|
+|steady_clock|	монотонные часы (никогда не идут назад). Идеальны для измерения интервалов.|
+|high_resolution_clock|	обычно алиас для самого мелкозернистого таймера (часто steady_clock).|
+
+
+Статические методы часов
+
+- now() – возвращает time_point с текущим временем у данных часов.
+- time_since_epoch() – продолжительность от начала эпохи часов.
+- to_time_t() / from_time_t() (только system_clock) – преобразование в time_t (секунды от эпохи Unix).
+
+------------
+- steady_clock::now() – надёжный секундомер, который никогда не сломается из-за изменения системного времени.
+- system_clock::now() – календарные часы, показывающие реальное время (которое может скакать), полезны для вывода дат и взаимодействия с внешним миром.
+
+```
+#include <chrono>
+#include <thread>
+#include <iostream>
+
+using namespace std::chrono_literals;
+
+int main() {
+    auto t1 = std::chrono::system_clock::now();
+    std::this_thread::sleep_for(500ms);
+    // Допустим, в этот момент пользователь перевел часы на 1 час назад
+    auto t2 = std::chrono::system_clock::now();
+
+    auto diff = t2 - t1;   // Может быть отрицательным или сильно меньше 500 мс!
+    std::cout << "Измерено: " << std::chrono::duration_cast<std::chrono::milliseconds>(diff).count() << " ms\n";
+    // Вывод, например: "-3599500 ms" (если час назад)
+}
+```
+
+Измерение времени выполнения
+```
+#include <iostream>
+#include <chrono>
+#include <thread>
+
+using namespace std::chrono;
+using namespace std::chrono_literals;
+
+int main() {
+    auto start = steady_clock::now();
+
+    // симуляция работы
+    std::this_thread::sleep_for(200ms);
+
+    auto end = steady_clock::now();
+    auto duration_ms = duration_cast<milliseconds>(end - start);
+
+    std::cout << "Время выполнения: " << duration_ms.count() << " ms\n";
+    // вывод: Время выполнения: 200 ms (приблизительно)
+}
+```
+
+вывод текущего времени
+```
+#include <ctime>
+#include <iostream>
+#include <chrono>
+
+int main() {
+    using namespace std::chrono;
+    auto now = system_clock::now();
+    time_t t = system_clock::to_time_t(now);
+    std::cout << "current time: " << std::ctime(&t);
+}
+```
+
+
+Задержки и тайм-ауты
+
+```
+std::this_thread::sleep_for(500ms);               // задержка 0.5 сек
+std::this_thread::sleep_until(steady_clock::now() + 1s); // до определённого момента
+```
+
