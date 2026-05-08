@@ -41,6 +41,14 @@ int main() {
     std::thread t(hello);  // создаём поток, он сразу начинает выполняться
     t.join();              // ожидаем завершения
     return 0;
+
+
+    unsigned int n = std::thread::hardware_concurrency();
+    std::cout << n << " concurrent threads are supported.\n";
+    
+    // Например, для инициализации пула потоков
+    // unsigned int thread_pool_size = std::thread::hardware_concurrency();
+
 }
 ```
 ## Ожидание завершения: join()
