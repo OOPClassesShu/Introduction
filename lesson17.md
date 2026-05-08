@@ -681,3 +681,61 @@ void del1(concurrent_queue1<int>& q) {
 	cout << "stop " << this_thread::get_id() << endl;
 }
 ```
+
+```
+#include <iostream>
+#include <thread>
+#include <chrono>
+
+// Callback-функция, которая принимает результат
+void onComplete(int result, const std::string& message) {
+    std::cout << "Callback: result = " << result << ", message = " << message << std::endl;
+}
+
+// Функция, выполняющая длительную работу, затем вызывающая callback
+void longTask(int durationSec, void(*callback)(int, const std::string&)) {
+    std::this_thread::sleep_for(std::chrono::seconds(durationSec));
+    int res = 42;
+    std::string msg = "Task finished";
+    callback(res, msg);
+}
+
+int main() {
+    std::string externalMsg = "Hello from main";  // локальная переменная, которая умрёт при выходе из main
+    // Запускаем поток, передавая callback и дополнительные данные (здесь нет захвата externalMsg, но проблема в долгом сне)
+    std::thread worker(longTask, 3, onComplete);
+    worker.detach();   // поток продолжает работать в фоне
+
+    // Основной поток завершается через 1 секунду, а worker будет спать 3 секунды
+    // Когда worker вызовет callback, main уже завершится, но программа не упадёт,
+    // так как callback не использует данные из main. Однако если бы использовал - была бы катастрофа.
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    std::cout << "Main finished" << std::endl;
+    // Здесь программа завершится, поток worker будет принудительно убит ОС
+    // (не успеет вызвать callback)
+}
+```
+
+```
+#include <iostream>
+#include <thread>
+#include <fstream>
+
+void logCallback(const std::string& message) {
+    std::ofstream file("log.txt", std::ios::app);
+    file << message << std::endl;
+}
+
+void backgroundTask(void(*callback)(const std::string&)) {
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    callback("Task completed");
+}
+
+int main() {
+    std::thread t(backgroundTask, logCallback);
+    t.detach();
+    std::this_thread::sleep_for(std::chrono::seconds(2)); // даём время на выполнение
+    std::cout << "Main exits" << std::endl;
+    // Здесь мы дождались, но если бы не задержка, лог мог бы не записаться.
+}
+```
