@@ -739,3 +739,60 @@ int main() {
     // Здесь мы дождались, но если бы не задержка, лог мог бы не записаться.
 }
 ```
+
+
+```
+
+/*
+В театральной кассе продаются билеты. 
+Работает три кассы. 
+Первый кассир обслуживает одного покупателя за 2 мин., 
+второй – за 2,5 мин., 
+третий – за 2,8 мин. 
+Всего надо обслужить 250 человек. 
+Через каждые 45 мин. 
+кассиры закрывают кассу на 10 минутный технический перерыв. 
+Время, за которое были обслужены все покупатели и количество покупателей, 
+обслуженные каждым кассиром.
+*/
+
+#include <iostream>
+#include <thread>
+#include <chrono>
+
+int customers = 250;
+int count = 0;
+
+void cashier(int id, double time_per_customer) {
+    double total_work = 0.0;  // накопленное время работы в минутах
+    const double work_interval = 45.0;  // минут до перерыва
+    const double break_duration = 10.0; // минут перерыва
+
+    int i = 0;
+    for ( ;count < customers; ++i, ++count) {
+        // Имитируем обслуживание одного покупателя
+        std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(time_per_customer * 100)));
+
+        total_work += time_per_customer;
+        // Проверяем, не пора ли на перерыв
+        if (total_work >= work_interval) {
+            std::cout << "Кассир " << id << " уходит на перерыв (обслужено " << i+1 << " покупателей)\n";
+            std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(break_duration * 100)));
+            total_work = 0.0; // сбрасываем счётчик после перерыва
+        }
+    }
+    std::cout << "Кассир " << id << " завершил работу. Всего обслужено: " << i+1 << "\n";
+}
+
+int main() {
+    std::thread t1(cashier, 1, 2.0);   // 2 мин на покупателя
+    std::thread t2(cashier, 2, 2.5);   // 2.5 мин
+    std::thread t3(cashier, 3, 2.8);   // 2.8 мин
+    t1.join();
+    t2.join();
+    t3.join();
+    std::cout << "Все покупатели обслужены!\n";
+    return 0;
+}
+
+```
