@@ -392,6 +392,279 @@ int main() {
 }
 ```
 
+## Условные переменные — std::condition_variable и std::condition_variable_any
+
+Условные переменные — это примитив синхронизации, который позволяет одному или нескольким потокам приостановить выполнение \
+до тех пор, пока не будет выполнено некоторое условие. 
+
+Предположим, у нас есть очередь, в которую один поток (продюсер) помещает данные, а другой поток (консьюмер) забирает их. \
+Консьюмеру нужно ждать, пока очередь не станет непустой. Наивный подход — активное ожидание (busy waiting) с периодической проверкой условия.
+
+```
+// Плохо: активное ожидание
+while (queue.empty()) {
+    // пустой цикл – бесполезная нагрузка на процессор
+}
+```
+
+Этот подход потребляет 100% одного ядра процессора, не давая возможности другим потокам работать. \
+Очевидное решение — блокирующее ожидание, при котором поток засыпает и просыпается только тогда, когда условие может стать истинным.
+
+Условная переменная предоставляет именно такой механизм:
+
+- поток засыпает (с отдачей процессора) в ожидании события;
+- другой поток сигналит (notify) об изменении состояния;
+- разбуженный поток проверяет условие и продолжает работу.
+
+Для работы условной переменной необходимо три элемента:
+
+- Мьютекс (std::mutex) – защищает разделяемые данные (например, очередь), которые проверяются и изменяются.
+- Условная переменная (std::condition_variable или std::condition_variable_any) – предоставляет методы wait(), notify_one(), notify_all().
+- Предикат – условие, которое проверяется (например, !queue.empty()). Обычно передается в wait().
+
+Условная переменная всегда используется вместе с мьютексом, чтобы избежать гонок между проверкой условия и переходом в режим ожидания.
+
+**Методы ожидания**
+
+wait(unique_lock<mutex>& lock)
+Атомарно:
+
+- Освобождает мьютекс lock.
+- Засыпает до тех пор, пока не будет разбужен вызовом notify_one() или notify_all().
+- Проснувшись, снова захватывает мьютекс и возвращает управление.
+  
+После возврата нужно повторно проверить условие, так как возможны ложные пробуждения.
+
+
+**Методы уведомления**
+
+- notify_one() – будит один ожидающий поток (если есть).
+- notify_all() – будит все ожидающие потоки.
+
+Уведомления не сохраняются: если ни один поток не ждёт в момент вызова notify, сигнал теряется. \
+Поэтому важно правильно организовывать синхронизацию — обычно сначала изменяют разделяемые данные, затем уведомляют.
+
+**Требования к мьютексу**
+
+std::condition_variable работает только с std::unique_lock<std::mutex>. \
+Более гибкая версия — std::condition_variable_any (работает с любым BasicLockable), но она может быть медленнее.
+
+Пример «Очередь производитель-потребитель» (один продюсер, один консьюмер)
+```
+#include <iostream>
+#include <thread>
+#include <queue>
+#include <mutex>
+#include <condition_variable>
+
+std::queue<int> q;
+std::mutex mtx;
+std::condition_variable cv;
+
+void producer() {
+    for (int i = 0; i < 10; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        {
+            std::lock_guard<std::mutex> lock(mtx);
+            q.push(i);
+            std::cout << "Produced: " << i << std::endl;
+        }
+        cv.notify_one(); // уведомляем потребителя
+    }
+}
+
+void consumer() {
+    while (true) {
+        std::unique_lock<std::mutex> lock(mtx);
+        // Ждём, пока очередь не станет непустой
+        cv.wait(lock, []{ return !q.empty(); });
+        int val = q.front();
+        q.pop();
+        lock.unlock(); // можно освободить раньше, чтобы не держать мьютекс при обработке
+        std::cout << "Consumed: " << val << std::endl;
+        if (val == 9) break; // условие остановки
+    }
+}
+
+int main() {
+    std::thread t1(producer);
+    std::thread t2(consumer);
+    t1.join();
+    t2.join();
+    return 0;
+}
+```
+
+- Защита очереди: q защищена мьютексом mtx. Все операции с очередью (чтение, запись) выполняются под блокировкой.
+- Почему unique_lock, а не lock_guard? wait() требует, чтобы мьютекс был захвачен через unique_lock, так как внутри wait() он освобождается и снова захватывается.
+  lock_guard не поддерживает ручное управление.
+- Предикат в wait() гарантирует, что после пробуждения условие !q.empty() истинно, и мы не выйдем из wait() по ложному пробуждению.
+- Освобождение мьютекса перед обработкой (lock.unlock()) улучшает параллелизм: пока потребитель обрабатывает данные, продюсер может добавлять новые.
+
+**notify_one() vs notify_all()**
+
+notify_one() будит один случайный поток из ожидающих. Эффективно, когда каждый элемент может быть обработан одним потоком (например, очередь задач). Лишние пробуждения отсутствуют.
+
+notify_all() будит все ожидающие потоки. Полезно, когда изменилось условие, важное для многих потоков (например, shutdown_flag = true).
+notify_all() может вызвать «толчею» (thundering herd) — много потоков одновременно проснутся и будут конкурировать за мьютекс, что снижает производительность.
+
+
+
+Реализация блокирующей очереди с двумя условными переменными (пусто/полно)
+Если очередь ограничена по размеру, нужны две условные переменные: одна для «не пусто», другая для «не полно».
+
+```
+#include <iostream>
+#include <thread>
+#include <queue>
+#include <mutex>
+#include <condition_variable>
+#include <chrono>
+#include <vector>
+
+// Шаблонный класс ограниченной (bounded) блокирующей очереди
+template<typename T>
+class BoundedBlockingQueue {
+private:
+    std::queue<T> queue_;
+    size_t capacity_;
+    mutable std::mutex mtx_;
+    std::condition_variable not_empty_; // сигналит, когда очередь перестала быть пустой
+    std::condition_variable not_full_;  // сигналит, когда очередь перестала быть полной
+
+public:
+    explicit BoundedBlockingQueue(size_t capacity) : capacity_(capacity) {}
+
+    // Добавляет элемент в очередь. Если очередь заполнена – блокируется.
+    void push(const T& value) {
+        std::unique_lock<std::mutex> lock(mtx_);
+        // Ждём, пока в очереди появится свободное место
+        not_full_.wait(lock, [this]() {
+            return queue_.size() < capacity_;
+        });
+        queue_.push(value);
+        // После добавления очередь точно не пуста – уведомляем одного потребителя
+        not_empty_.notify_one();
+    }
+
+    // Извлекает элемент из очереди. Если очередь пуста – блокируется.
+    T pop() {
+        std::unique_lock<std::mutex> lock(mtx_);
+        // Ждём, пока очередь не станет непустой
+        not_empty_.wait(lock, [this]() {
+            return !queue_.empty();
+        });
+        T value = queue_.front();
+        queue_.pop();
+        // После извлечения освободилось место – уведомляем одного производителя
+        not_full_.notify_one();
+        return value;
+    }
+
+    // Неблокирующая попытка извлечь элемент (опционально)
+    bool try_pop(T& value) {
+        std::lock_guard<std::mutex> lock(mtx_);
+        if (queue_.empty()) return false;
+        value = queue_.front();
+        queue_.pop();
+        not_full_.notify_one();
+        return true;
+    }
+
+    // Текущий размер очереди (полезен для отладки, не для принятия решений)
+    size_t size() const {
+        std::lock_guard<std::mutex> lock(mtx_);
+        return queue_.size();
+    }
+};
+
+// ---------- Пример использования ----------
+
+void producer(BoundedBlockingQueue<int>& q, int id, int items) {
+    for (int i = 0; i < items; ++i) {
+        int value = id * 100 + i;  // уникальное значение
+        q.push(value);
+        std::cout << "[Producer " << id << "] added " << value
+                  << " | queue size = " << q.size() << std::endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(50)); // имитация работы
+    }
+    std::cout << "[Producer " << id << "] finished." << std::endl;
+}
+
+void consumer(BoundedBlockingQueue<int>& q, int id, int items) {
+    for (int i = 0; i < items; ++i) {
+        int value = q.pop();
+        std::cout << "[Consumer " << id << "] got " << value
+                  << " | queue size = " << q.size() << std::endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(80)); // обработка
+    }
+    std::cout << "[Consumer " << id << "] finished." << std::endl;
+}
+
+int main() {
+    const size_t capacity = 3;
+    BoundedBlockingQueue<int> queue(capacity);
+
+    const int prod_count = 2;
+    const int cons_count = 2;
+    const int items_per_prod = 5;  // всего 2*5 = 10 элементов
+    const int items_per_cons = 5;  // суммарно потребители заберут 10
+
+    std::vector<std::thread> producers, consumers;
+
+    for (int i = 0; i < prod_count; ++i) {
+        producers.emplace_back(producer, std::ref(queue), i, items_per_prod);
+    }
+    for (int i = 0; i < cons_count; ++i) {
+        consumers.emplace_back(consumer, std::ref(queue), i, items_per_cons);
+    }
+
+    for (auto& t : producers) t.join();
+    for (auto& t : consumers) t.join();
+
+    std::cout << "All threads finished." << std::endl;
+    return 0;
+}
+```
+
+**Объяснение работы**
+
+Зачем две условные переменные?
+
+- not_empty_ — используется потребителями. Они ждут, когда очередь из пустой станет непустой.
+- not_full_ — используется производителями. Они ждут, когда очередь из полной станет не полностью заполненной (появится свободное место).
+
+Разделение сигналов позволяет:
+
+- избегать ненужных пробуждений (например, после вставки будить только потребителей, а не производителей);
+- сделать код логически ясным.
+
+**Защита мьютексом**
+
+Все обращения к queue_ (чтение, запись, проверка размера) выполняются под одним std::mutex. Это стандартный способ обеспечения потокобезопасности.
+
+**Почему std::unique_lock, а не lock_guard?**
+
+Методы wait() условной переменной требуют std::unique_lock, потому что внутри они освобождают мьютекс перед засыпанием и снова захватывают его перед возвратом. \
+lock_guard не предоставляет операций lock()/unlock().
+
+**Роль предиката в wait()**
+
+```
+not_full_.wait(lock, [this]() { return queue_.size() < capacity_; });
+```
+
+Это защита от ложных пробуждений (spurious wakeups) и от ситуаций, когда другой поток успел изменить условие после пробуждения. 
+
+Предикат проверяется:
+- перед засыпанием (если условие уже истинно, поток не засыпает);
+- после каждого пробуждения (пока условие не станет истинным, цикл ожидания продолжается).
+
+**notify_one() вместо notify_all()**
+
+Мы используем notify_one(), потому что достаточно разбудить одного потребителя (или одного производителя). \
+Это эффективнее: не создаётся «толчея» из множества потоков, конкурирующих за мьютекс.
+
 
 
 ## Сводно об примитивах синхронизации
