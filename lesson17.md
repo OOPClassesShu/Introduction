@@ -283,6 +283,147 @@ void transfer(Account& from, Account& to, int amount) {
 }
 ```
 
+Кажется, всё хорошо. Но что, если два потока одновременно вызывают transfer(a, b, 100) и transfer(b, a, 100)?
+
+- Поток 1: захватывает a.mtx → затем пытается захватить b.mtx.
+- Поток 2: захватывает b.mtx → затем пытается захватить a.mtx.
+
+В этом случае каждый поток удерживает нужный другому мьютекс. Оба потока засыпают навечно – взаимная блокировка (deadlock).
+
+```
+/*
+Теперь даже при одновременных встречных переводах deadlock не возникает.
+scoped_lock гарантирует, что оба мьютекса будут захвачены без состояния гонки.
+*/
+void transfer(Account& from, Account& to, int amount) {
+    // scoped_lock захватывает оба мьютекса безопасно
+    std::scoped_lock lock(from.mtx, to.mtx);
+    
+    from.balance -= amount;
+    to.balance += amount;
+} // оба мьютекса автоматически освобождаются
+```
+
+## std::recursive_mutex
+
+```
+std::recursive_mutex rec_mtx;
+void recurse(int depth) {
+    std::lock_guard<std::recursive_mutex> lock(rec_mtx);
+    if (depth > 0) recurse(depth - 1);
+}
+```
+
+Обычно при рекурсивных вызовах функций, каждая из которых должна быть защищена мьютексом. Но во многих случаях можно реструктурировать код.
+
+## std::timed_mutex
+
+Позволяют попытаться захватить мьютекс с таймаутом.
+```
+std::timed_mutex tm;
+
+if (tm.try_lock_for(std::chrono::milliseconds(100))) {
+    // захватили
+    tm.unlock();
+} else {
+    // не удалось за 100 мс
+}
+```
+
+- try_lock_for(duration) – ожидает не более duration времени, затем возвращает false, если мьютекс не был захвачен.
+- try_lock_until(time_point) – ожидает до абсолютного момента времени.
+- После таймаута поток не блокируется и может выполнить полезную работу вместо ожидания.
+
+timed_mutex может быть немного медленнее обычного mutex, поэтому используйте его только когда нужна функциональность таймаута.
+
+
+## std::shared_mutex – для чтения/записи
+
+Разделяет блокировки на два типа: разделяемые (shared) для множества читающих потоков и исключительные (unique) для одного пишущего. \
+Специализированные обёртки: std::shared_lock и std::unique_lock (или lock_guard).
+
+- std::shared_lock – RAII для разделяемой блокировки (аналог unique_lock, но с lock_shared() / unlock_shared()).
+- std::shared_lock также поддерживает отложенную блокировку, try_lock, перемещение и т.д.
+
+
+
+```
+std::shared_mutex sm;
+
+void reader() {
+    std::shared_lock lock(sm); // разделяемая блокировка
+    // чтение данных
+}
+void writer() {
+    std::unique_lock lock(sm); // исключительная
+    // запись
+}
+```
+
+```
+#include <iostream>
+#include <shared_mutex>
+#include <thread>
+#include <vector>
+
+class SharedCounter {
+    int value = 0;
+    mutable std::shared_mutex mtx;
+public:
+    void increment() {
+        std::unique_lock lock(mtx);
+        ++value;
+    }
+    int get() const {
+        std::shared_lock lock(mtx);
+        return value;
+    }
+};
+
+int main() {
+    SharedCounter c;
+    std::vector<std::thread> threads;
+    for (int i = 0; i < 10; ++i) {
+        threads.emplace_back([&c] { for (int i = 0; i < 10000; ++i) c.increment(); });
+    }
+    for (auto& t : threads) t.join();
+    std::cout << c.get() << std::endl; // 100000
+}
+```
+
+
+
+## Сводно об примитивах синхронизации
+
+### Мьютексы (взаимные исключения)
+
+|Примитив|	Назначение|	Появился в|
+|-|-|-|
+|std::mutex|	Базовый мьютекс, нерекурсивный, не поддерживает таймаут|	C++11|
+|std::recursive_mutex|	Рекурсивный – один поток может захватить многократно|	C++11|
+|std::timed_mutex|	Поддерживает try_lock_for и try_lock_until|	C++11|
+|std::recursive_timed_mutex|	Рекурсивный + таймаут|	C++11|
+|std::shared_mutex|	Разделяемый (читатели/писатели)|	C++17|
+|std::shared_timed_mutex|	Разделяемый + таймаут|	C++14|
+
+**RAII-обёртки для управления блокировками**
+
+|Обёртка|	Особенности|	Появился в|
+|-|-|-|
+|std::lock_guard|	Простая, только захват/освобождение в конструкторе/деструкторе|	C++11|
+|std::unique_lock|	Гибкая – отложенный захват, перемещение, try_lock, ручное управление|	C++11|
+|std::scoped_lock|	Захват нескольких мьютексов без deadlock (вариативная шаблонность)|	C++17|
+|std::shared_lock|	Разделяемая блокировка для shared_mutex / shared_timed_mutex|	C++14|
+
+
+## Условные переменные (condition variables)
+
+
+|Примитив|	Назначение|	Появился в|
+|-|-|-|
+|std::condition_variable|	Работает с std::unique_lock<std::mutex>|	C++11|
+|std::condition_variable_any|	Работает с любым типом|	C++11|
+
 ----
 
 # Служебное
