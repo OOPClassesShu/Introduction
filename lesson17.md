@@ -866,9 +866,160 @@ ATOMIC_FLAG_INIT – макрос для инициализации atomic_flag 
 */
 ```
 
+### Синхронизация через memory_order_acquire/release (флаг готовности)
+
+Один поток готовит данные, а другой ждёт сигнала, что данные готовы, без использования условных переменных. 
+Это демонстрирует, как правильно синхронизировать потоки только с помощью атомарных операций.
+
+```
+#include <iostream>
+#include <thread>
+#include <atomic>
+#include <cassert>
+
+std::atomic<bool> ready{false};
+int data = 0;
+
+void producer() {
+    // Подготавливаем данные
+    data = 42; // обычное присваивание
+
+    // "Освобождающая" запись – все предыдущие операции (data = 42)
+    // должны стать видимыми в потоке-потребителе.
+    ready.store(true, std::memory_order_release);
+}
+
+void consumer() {
+    // "Захватывающее" чтение – ждём, пока ready не станет true
+    while (!ready.load(std::memory_order_acquire)) {
+        // активное ожидание (или можно было бы засыпать, но для примера – спин)
+    }
+
+    // Благодаря acquire мы гарантированно видим все изменения, сделанные
+    // до соответствующего release в producer.
+    std::cout << "data = " << data << std::endl;
+    assert(data == 42);
+}
+
+int main() {
+    std::thread t1(producer);
+    std::thread t2(consumer);
+
+    t1.join();
+    t2.join();
+
+    return 0;
+}
+
+/*
+Если бы мы использовали просто ready = true и while (!ready), компилятор и процессор могли бы переупорядочить операции.
+Потребитель мог бы увидеть ready == true, но при этом прочитать старое значение data (например, 0), потому что запись в data произошла бы позже.
+
+Решение – барьеры памяти (memory barriers).
+
+memory_order_release гарантирует, что все операции записи до этой точки будут завершены и видимы в других потоках, которые выполнят acquire на той же переменной.
+
+memory_order_acquire гарантирует, что все операции чтения/записи после этой точки не начнутся, пока не будет виден эффект предыдущего release.
+
+Пара release/acquire устанавливает отношение happens‑before между записью в data и чтением из data.
+Потребитель, увидев ready == true, может быть уверен, что запись в data также стала видимой.
+
+Активное ожидание (while (!ready.load(...))) – не самый хороший способ, он грузит процессор.
+На практике использовали бы условную переменную.
+Однако в учебных целях спин хорошо демонстрирует принцип.
+*/
+```
+
+#### Упрощённый Lock‑free стек (с обсуждением проблемы ABA)
+
+Реализовать однопроходный стек, который можно безопасно использовать из нескольких потоков без мьютексов, с помощью std::atomic и compare_exchange_weak.
+```
+#include <atomic>
+#include <thread>
+#include <iostream>
+
+template<typename T>
+class LockFreeStack {
+    struct Node {
+        T data;
+        Node* next;
+        Node(const T& d) : data(d), next(nullptr) {}
+    };
+    std::atomic<Node*> head{nullptr};
+
+public:
+    void push(const T& value) {
+        Node* new_node = new Node(value);
+        new_node->next = head.load(std::memory_order_relaxed);
+        // Атомарно пытаемся установить head = new_node
+        while (!head.compare_exchange_weak(new_node->next, new_node,
+                                           std::memory_order_release,
+                                           std::memory_order_relaxed)) {
+            // new_node->next обновляется до текущего head, цикл продолжается
+        }
+    }
+
+    bool pop(T& result) {
+        Node* old_head = head.load(std::memory_order_acquire);
+        while (old_head &&
+               !head.compare_exchange_weak(old_head, old_head->next,
+                                           std::memory_order_release,
+                                           std::memory_order_relaxed)) {
+            // old_head обновляется до актуального значения head
+        }
+        if (!old_head) return false;
+        result = old_head->data;
+        delete old_head;   // ОСТОРОЖНО! 
+        return true;
+    }
+};
 
 
+int main() {
+    LockFreeStack<int> stack;
+    std::thread t1([&] { stack.push(10); stack.push(20); });
+    std::thread t2([&] { stack.push(30); });
+    t1.join(); t2.join();
 
+    int val;
+    while (stack.pop(val)) {
+        std::cout << val << " ";
+    }
+    std::cout << std::endl;
+}
+
+/*
+Стек хранит атомарный указатель на голову (head). При push мы создаём новый узел, указываем его next на текущую голову,
+а затем атомарно заменяем head на новый узел, если head не изменился за время подготовки.
+compare_exchange_weak выполняет эту проверку атомарно.
+
+compare_exchange_weak – это CAS (Compare‑And‑Swap).
+
+Первый аргумент (new_node->next) – ожидаемое значение. Если текущее head равно ожидаемому, то head заменяется на new_node и возвращается true.
+
+Иначе new_node->next обновляется до текущего head, и возвращается false.
+
+Цикл повторяется до успеха.
+
+
+В push мы используем release для успешного обмена, чтобы все записи в новый узел стали видимы для других потоков.
+
+В pop мы используем acquire для загрузки головы, чтобы гарантировать видимость данных узла.
+
+
+Проблема ABA – этот код не защищён от ABA!
+
+Поток A читает head = X, потом засыпает. Поток B дважды выполняет pop (удаляет X, затем добавляет новый узел с тем же адресом X, если память переиспользовалась).
+
+Поток A просыпается, видит, что head по‑прежнему указывает на X (адрес тот же, но данные другие), и успешно выполняет CAS, ошибочно считая, что ничего не изменилось.
+
+Это классическая проблема lock‑free структур. Решения: добавить счётчик версий (std::atomic<std::pair<Node*, uintptr_t>>).
+
+Управление памятью – в данном коде delete old_head может привести к проблемам, потому что другой поток может всё ещё держать старый указатель (например, только что прочитал head до обновления). В настоящей lock‑free структуре используют отложенное удаление.
+
+*/
+
+```
 
 ## Сводно об примитивах синхронизации
 
