@@ -1021,6 +1021,313 @@ compare_exchange_weak – это CAS (Compare‑And‑Swap).
 
 ```
 
+
+## Асинхронное программирование в C++ (std::async, std::future, std::promise)
+
+### Многопоточность (с использованием std::thread)
+
+- Запуск: вы создаёте отдельный поток для выполнения задачи.
+- Управление: вы сами отвечаете за синхронизацию (мьютексы, условные переменные) и за ожидание завершения (join() или detach()).
+- Возврат результата: нужно использовать разделяемые переменные, защищённые мьютексом, или другие механизмы синхронизации.
+- Издержки: создание потока имеет накладные расходы (особенно при большом количестве коротких задач).
+
+Применение: когда задачи тяжёлые и их количество фиксировано, или когда требуется постоянный фоновый сервис.
+
+### Асинхронное программирование (с std::async и std::future)
+
+- Запуск: вы вызываете std::async, передавая функцию; запуск может происходить в новом потоке или отложенно (лениво) в том же потоке при вызове .get().
+- Управление: фреймворк сам решает, создавать ли новый поток, и управляет его временем жизни.
+- Возврат результата: через std::future – специальный объект, который «обещает» результат в будущем.
+- Издержки: меньше ручного управления, но возможны накладные расходы на объекты future.
+  
+Применение: когда нужно запустить задачу, не блокируя текущий поток, и получить результат позже. \
+Идеально для задач ввода-вывода, вызовов API, независимых вычислений.
+
+### std::async и std::future – базовые строительные блоки
+
+- std::async – запуск асинхронной задачи
+- std::async – это функция, которая запускает переданный вызываемый объект (функцию, лямбду, функтор) и возвращает std::future.
+
+Политики запуска (std::launch):
+
+- std::launch::async – гарантированно запустить задачу в новом потоке.
+- std::launch::deferred – отложить выполнение до первого вызова .get() или .wait() (задача будет выполнена в том же потоке, который вызвал .get()).
+- std::launch::async | std::launch::deferred (по умолчанию) – реализация сама выбирает стратегию (обычно async, но не гарантировано).
+
+std::future<T> – это шаблонный класс, который может находиться в трёх состояниях:
+
+- нет результата (future пуст),
+- результат ещё не готов (ожидание),
+- результат готов (значение или исключение).
+
+Основные методы:
+
+- .get() – блокирует текущий поток до тех пор, пока результат не станет доступен, затем возвращает значение (или выбрасывает исключение). Важно: get() можно вызвать только один раз. После этого future становится недействительным.
+- .wait() – блокирует, пока результат не появится, но не возвращает его.
+- .wait_for(duration) и .wait_until(time_point) – ожидание с таймаутом; возвращают статус std::future_status::ready, timeout или deferred.
+
+
+Запуск асинхронной задачи
+```
+std::future<ReturnType> result = std::async(launch_policy, callable, args...);
+
+/*
+launch_policy – флаги:
+	std::launch::async – запустить в новом потоке.
+	std::launch::deferred – отложить выполнение до первого вызова get() или wait() (в текущем потоке).
+	std::launch::async | std::launch::deferred – по умолчанию; реализация сама выбирает стратегию.
+*/
+```
+
+Получение результата
+future.get() – блокируется, пока результат не станет доступен (если он ещё не готов).  \
+После вызова get() future становится недействительным (можно вызвать только один раз).
+
+- future.wait() – блокируется, но не возвращает результат.
+- future.wait_for(duration) и wait_until(time_point) – ожидание с таймаутом.
+
+```
+#include <iostream>
+#include <future>
+#include <chrono>
+
+int slow_square(int x) {
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    return x * x;
+}
+
+int main() {
+    std::future<int> f = std::async(std::launch::async, slow_square, 5);
+    std::cout << "Waiting...\n";
+    if (f.wait_for(std::chrono::milliseconds(500)) == std::future_status::timeout) {
+        std::cout << "Still waiting...\n";
+    }
+    int result = f.get(); // блокируется до завершения
+    std::cout << "Result: " << result << std::endl;
+}
+```
+
+### std::promise – ручная установка значения
+
+std::promise – это «конец» канала: поток, который вычисляет значение, может установить его в promise, \
+а связанный с ним std::future позволит получить результат.
+
+std::promise<T> – это пара к std::future<T>. \
+Поток, который вычисляет результат, может использовать promise, чтобы отправить значение (или исключение) в соответствующий future.\
+Это полезно, когда нужно передать результат из произвольного места, не используя async.
+
+
+
+Как это работает:
+
+Создаётся объект std::promise<T>. У него есть метод get_future(), который возвращает future.
+
+Вычисляющий поток вызывает promise.set_value(value) или promise.set_exception(ex).
+
+Ожидающий поток вызывает future.get(), который блокируется, пока значение не будет установлено.
+
+```
+#include <future>
+#include <thread>
+
+void compute(std::promise<int> prom, int x) {
+        int result = x * x; // вычисление
+        prom.set_value(result); // отправляем результат
+}
+
+int main() {
+    std::promise<int> prom;
+    std::future<int> fut = prom.get_future();
+
+    std::thread t(compute, std::move(prom), 7);
+    int res = fut.get();
+    t.join();
+    std::cout << res << std::endl;
+}
+```
+Параллельное вычисление суммы вектора
+Разделите вектор на 4 части, для каждой части запустите std::async для вычисления суммы, затем сложите результаты.
+
+```
+#include <future>
+#include <vector>
+#include <numeric>
+#include <iostream>
+
+long long sum_part(const std::vector<int>& v, size_t start, size_t end) {
+    return std::accumulate(v.begin() + start, v.begin() + end, 0LL);
+}
+
+int main() {
+    std::vector<int> data(1'000'000, 1);
+    const size_t n = 4;
+    size_t chunk = data.size() / n;
+    std::vector<std::future<long long>> futures;
+    for (size_t i = 0; i < n; ++i) {
+        size_t start = i * chunk;
+        size_t end = (i == n-1) ? data.size() : (i+1)*chunk;
+        futures.push_back(std::async(std::launch::async, sum_part, std::ref(data), start, end));
+    }
+    long long total = 0;
+    for (auto& f : futures) total += f.get();
+    std::cout << total << std::endl; // 1'000'000
+}
+```
+Ожидание с таймаутом
+
+Запустите async с долгой задачей. Попробуйте дождаться результата не более 1 секунды; если не успевает – \
+выведите сообщение и продолжайте ждать дальше.
+
+```
+#include <future>
+#include <chrono>
+#include <iostream>
+
+int long_task() {
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+    return 42;
+}
+
+int main() {
+    auto fut = std::async(std::launch::async, long_task);
+    if (fut.wait_for(std::chrono::seconds(1)) == std::future_status::timeout) {
+        std::cout << "Задача ещё не готова, но мы не блокируемся надолго\n";
+        // можно сделать другую работу, а потом снова проверить
+        int result = fut.get(); // здесь всё равно дождёмся
+        std::cout << "Результат: " << result << std::endl;
+    }
+}
+```
+
+
+```
+Асинхронный поиск максимума (async + future)
+Условие:
+Дан вектор целых чисел. Используя std::async, найдите максимальный элемент.
+Разделите вектор на три части, для каждой части запустите асинхронную задачу,
+которая найдёт локальный максимум, затем из трёх локальных результатов выберите глобальный максимум.
+
+
+#include <iostream>
+#include <vector>
+#include <future>
+#include <algorithm>
+
+int find_max(const std::vector<int>& v, size_t start, size_t end) {
+    return *std::max_element(v.begin() + start, v.begin() + end);
+}
+
+int main() {
+    std::vector<int> data = {5, 2, 9, 1, 7, 3, 8, 4, 6, 0, 10, -2};
+    size_t size = data.size();
+    size_t part = size / 3;
+
+    auto f1 = std::async(std::launch::async, find_max, std::ref(data), 0, part);
+    auto f2 = std::async(std::launch::async, find_max, std::ref(data), part, 2*part);
+    auto f3 = std::async(std::launch::async, find_max, std::ref(data), 2*part, size);
+
+    int max1 = f1.get();
+    int max2 = f2.get();
+    int max3 = f3.get();
+    int global_max = std::max({max1, max2, max3});
+
+    std::cout << "Global maximum: " << global_max << std::endl;
+}
+
+```
+
+```
+Параллельный подсчёт количества вхождений элемента
+Условие:
+Дан вектор целых чисел и некоторое значение target.
+Разделите вектор на 4 части и асинхронно подсчитайте количество вхождений target в каждой части.
+Затем сложите результаты. Напишите функцию parallel_count
+
+
+#include <iostream>
+#include <vector>
+#include <future>
+#include <algorithm>
+
+int count_part(const std::vector<int>& v, int target, size_t start, size_t end) {
+    return std::count(v.begin() + start, v.begin() + end, target);
+}
+
+int parallel_count(const std::vector<int>& data, int target, size_t num_parts) {
+    std::vector<std::future<int>> futures;
+    size_t chunk = data.size() / num_parts;
+    for (size_t i = 0; i < num_parts; ++i) {
+        size_t start = i * chunk;
+        size_t end = (i == num_parts - 1) ? data.size() : (i + 1) * chunk;
+        futures.push_back(std::async(std::launch::async, count_part, std::ref(data), target, start, end));
+    }
+    int total = 0;
+    for (auto& f : futures) total += f.get();
+    return total;
+}
+
+int main() {
+    std::vector<int> data = {1, 2, 3, 2, 4, 2, 5, 2, 6, 2};
+    int target = 2;
+    int cnt = parallel_count(data, target, 4);
+    std::cout << "Count of " << target << " = " << cnt << std::endl;
+}
+
+```
+
+```
+Поиск первого вхождения элемента (с остановкой при обнаружении)
+Условие:
+Дан вектор целых чисел и значение target. Нужно найти индекс первого вхождения target, но с использованием асинхронного поиска по частям. Если элемент найден в одной из частей, остальные задачи должны быть либо отменены, либо их результаты игнорируются. (Упрощённо: просто проверяем части по очереди, но с асинхронностью; можно использовать флаг std::atomic<bool> для ранней остановки).
+
+
+
+#include <iostream>
+#include <vector>
+#include <future>
+#include <atomic>
+
+std::atomic<bool> found_flag{false};
+
+int search_part(const std::vector<int>& v, int target, size_t start, size_t end) {
+    for (size_t i = start; i < end; ++i) {
+        if (found_flag.load(std::memory_order_relaxed)) return -1;
+        if (v[i] == target) {
+            found_flag.store(true, std::memory_order_relaxed);
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
+int main() {
+    std::vector<int> data = {5, 2, 9, 1, 7, 3, 8, 4, 6, 0, 10, -2};
+    int target = 7;
+    size_t parts = 4;
+    size_t chunk = data.size() / parts;
+    std::vector<std::future<int>> futures;
+
+    for (size_t i = 0; i < parts; ++i) {
+        size_t start = i * chunk;
+        size_t end = (i == parts - 1) ? data.size() : (i + 1) * chunk;
+        futures.push_back(std::async(std::launch::async, search_part, std::ref(data), target, start, end));
+    }
+
+    int index = -1;
+    for (auto& f : futures) {
+        int res = f.get();
+        if (res != -1) { index = res; break; }
+    }
+    if (index != -1)
+        std::cout << "Element " << target << " found at index " << index << std::endl;
+    else
+        std::cout << "Element not found" << std::endl;
+}
+```
+
+
+
+
 ## Сводно об примитивах синхронизации
 
 ### Мьютексы (взаимные исключения)
