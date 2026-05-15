@@ -666,6 +666,209 @@ not_full_.wait(lock, [this]() { return queue_.size() < capacity_; });
 Это эффективнее: не создаётся «толчея» из множества потоков, конкурирующих за мьютекс.
 
 
+## Атомарные операции — std::atomic
+
+Атомарные операции — используются для построения lock‑free (безблокировочных) структур данных и эффективной синхронизации без использования мьютексов. 
+
+
+std::atomic<T> – базовое использование
+
+```
+#include <atomic>
+#include <thread>
+#include <iostream>
+
+std::atomic<int> counter(0); // атомарный счётчик
+
+void increment() {
+    for (int i = 0; i < 100000; ++i) {
+        ++counter; // атомарный инкремент
+    }
+}
+
+int main() {
+    std::thread t1(increment), t2(increment);
+    t1.join(); t2.join();
+    std::cout << counter.load() << std::endl; // всегда 200000
+}
+```
+
+### Основные операции
+
+|Метод|	Описание|
+|-|-|
+|load()|	Атомарное чтение значения|
+|store(value)|	Атомарная запись значения|
+|exchange(value)|	Обмен значения на новое, возвращает старое|
+|fetch_add(delta)|	Прибавляет delta, возвращает старое значение|
+|fetch_sub(delta)|	Вычитает delta|
+|++, --, +=, -=	Удобные операторы| (вызывают fetch_add/sub)|
+|compare_exchange_weak(expected, desired)|	CAS (Compare-And-Swap)|
+|compare_exchange_strong(expected, desired)|	CAS без ложных отказов|
+
+```
+std::atomic<int> value(10);
+int old = value.fetch_add(5); // old = 10, value = 15
+value += 3;                   // value = 18
+int prev = value.exchange(0); // prev = 18, value = 0
+```
+
+###
+**compare_exchange_weak** атомарно сравнивает значение с expected. Если равно, заменяет на desired и возвращает true. \
+Иначе записывает текущее значение в expected и возвращает false.
+
+weak версия может ложно возвращать false даже при равенстве (на некоторых архитектурах) – обычно используется в циклах. strong гарантирует отсутствие ложных отказов.
+
+```
+bool cas_example(std::atomic<int>& a, int expected, int desired) {
+    return a.compare_exchange_strong(expected, desired);
+}
+```
+
+### Модели памяти
+
+По умолчанию все операции std::atomic используют std::memory_order_seq_cst (последовательно-согласованная). \
+Это самая строгая модель, гарантирующая единый глобальный порядок операций. Но она может быть медленной.
+
+Для производительности можно указать более слабый порядок:
+
+- memory_order_relaxed – только атомарность, без синхронизации (подходит для счётчиков).
+- memory_order_acquire – чтение, гарантирует видимость записей release в этом потоке.
+- memory_order_release – запись, делает изменения видимыми для acquire.
+- memory_order_acq_rel – совмещает acquire и release (для read-modify-write).
+- memory_order_seq_cst – строгая глобальная последовательность (по умолчанию).
+
+### Атомарный счётчик без блокировок
+Несколько потоков одновременно увеличивают общий счётчик. \
+Необходимо гарантировать, что итоговое значение будет равно сумме инкрементов, даже без использования мьютексов.
+
+```
+#include <iostream>
+#include <thread>
+#include <atomic>
+#include <vector>
+
+std::atomic<int> counter(0);   // атомарная переменная
+
+void increment(int times) {
+    for (int i = 0; i < times; ++i) {
+        ++counter;   // атомарный пост-инкремент (fetch_add)
+        // эквивалентно counter.fetch_add(1, std::memory_order_seq_cst)
+    }
+}
+
+int main() {
+    const int THREADS = 10;
+    const int INCREMENTS_PER_THREAD = 100000;
+
+    std::vector<std::thread> threads;
+    for (int i = 0; i < THREADS; ++i) {
+        threads.emplace_back(increment, INCREMENTS_PER_THREAD);
+    }
+
+    for (auto& t : threads) t.join();
+
+    std::cout << "Final counter: " << counter.load() << std::endl;
+    // Всегда 1000000 (10 * 100000)
+}
+
+
+/*
+Операция ++counter без атомарности компилируется в три машинные инструкции: чтение, инкремент, запись.
+Два потока могут прочитать одно и то же старое значение, оба его увеличить и записать – результат будет меньше ожидаемого.
+
+Что делает std::atomic<int>?
+Этот шаблон оборачивает int и предоставляет гарантию, что каждая операция (чтение, запись, read‑modify‑write) будет выполняться неделимо относительно других потоков.
+
+Оператор ++
+Для std::atomic он определён как fetch_add(1) с последующей загрузкой нового значения.
+Это атомарная операция типа read‑modify‑write (RMW) — процессор выполняет её за один шаг, не позволяя другим потокам вмешаться.
+
+Стандартная модель памяти
+По умолчанию используется std::memory_order_seq_cst (последовательно-согласованная).
+Это самая строгая модель, которая гарантирует единый глобальный порядок всех атомарных операций.
+Для простого счётчика можно было бы ослабить до memory_order_relaxed.
+
+Счётчик всегда будет правильным, а программа работает быстрее, чем с мьютексом, потому что атомарные операции обычно реализуются без переключения контекста ядра.
+*/
+```
+
+### На основе std::atomic_flag
+
+```
+#include <iostream>
+#include <thread>
+#include <atomic>
+#include <vector>
+
+class Spinlock {
+    std::atomic_flag flag = ATOMIC_FLAG_INIT;
+public:
+    void lock() {
+        // test_and_set возвращает предыдущее значение (true – уже захвачен)
+        while (flag.test_and_set(std::memory_order_acquire)) {
+            // активное ожидание (spin) – ждём, пока флаг не станет false
+        }
+    }
+
+    void unlock() {
+        flag.clear(std::memory_order_release);
+    }
+};
+
+Spinlock spin;
+int shared_data = 0;
+
+void worker(int id, int iterations) {
+    for (int i = 0; i < iterations; ++i) {
+        spin.lock();
+        ++shared_data;                   // критическая секция
+        spin.unlock();
+    }
+}
+
+int main() {
+    const int THREADS = 4;
+    const int ITER = 100000;
+
+    std::vector<std::thread> threads;
+    for (int i = 0; i < THREADS; ++i) {
+        threads.emplace_back(worker, i, ITER);
+    }
+
+    for (auto& t : threads) t.join();
+
+    std::cout << "shared_data = " << shared_data << std::endl; // 400000
+}
+
+/*
+std::atomic_flag – тип в C++, который гарантированно является lock‑free (без использования мьютексов внутри).
+Его можно использовать для построения низкоуровневых примитивов.
+
+test_and_set() – атомарная операция, которая устанавливает флаг в true и возвращает предыдущее значение.
+Если вернулось false – значит, флаг был сброшен, и текущий поток захватил блокировку.
+Если true – блокировка уже кем‑то удерживается, тогда мы крутимся в цикле (spin).
+
+Модели памяти
+
+memory_order_acquire в lock() гарантирует, что последующие операции чтения/записи в критической секции не будут переупорядочены до захвата блокировки.
+
+memory_order_release в unlock() гарантирует, что все предыдущие операции внутри критической секции завершатся до того, как блокировка будет отпущена.
+
+Это правильная двухсторонняя синхронизация.
+
+Спинлок эффективен, когда критическая секция очень короткая, а конкуренция невысока (например, просто инкремент).
+Если же секция долгая, спинлок будет бессмысленно жечь процессор, поэтому в таких случаях лучше использовать std::mutex.
+
+ATOMIC_FLAG_INIT – макрос для инициализации atomic_flag в сброшенное состояние (C++11).
+Начиная с C++20 можно писать просто std::atomic_flag flag = false.
+
+*/
+```
+
+
+
+
 
 ## Сводно об примитивах синхронизации
 
